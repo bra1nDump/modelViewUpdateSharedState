@@ -14,14 +14,8 @@ module TestingHelpers =
 module Map =
     let count (x: Map<_, _>) = x.Count
 
-module StoreTests =
-    open Api
-    open Store
-
-    // helpers
-    let messages model = model.Messages
-
-    let store() = init id |> fst 
+[<AutoOpen>]
+module DataSamples =
     let chat1 = { Id = ChatId "kirill-natasha" }
     let chat2 = { Id = ChatId "kirill-kostas" }
     let message1 = 
@@ -31,6 +25,12 @@ module StoreTests =
         {   Id = MessageId "2"
             ChatId = chat2.Id }
 
+module StoreTests =
+    open Api
+    open Store
+
+    // helpers
+    let store() = init id |> fst 
     let chat1Watcher watcher = Watcher.Chat (chat1.Id, watcher)
     
     let ``can add messages``() = 
@@ -120,9 +120,54 @@ module StoreTests =
         ``chat watcher gets called when message for that chat is recieved``()
         ``chat watcher does not get called when message for some other chat is recieved``()
 
-module Main =
+// TODO:
+// module TestRunner = 
+
+module AppTests =
+    open App
+
+    let ``app stabilizes``() =
+        let mutable app, cmd = init()
+
+        // TODO: refactor to a fold
+        while not cmd.IsEmpty do
+            match cmd with 
+            | Cmd.Msg msg::rest -> 
+                let app', cmd' = update msg app
+                app <- app'; cmd <- rest @ cmd'
+            | _::rest -> cmd <- rest
+            | _ -> failwith "unreachable"
+
+    let ``one watcher for chat list gets added``() =
+        let rec stabilize (model, cmd: Cmd.Cmd<_> list) =
+            if cmd.IsEmpty
+            then model
+            else
+                let model, cmd =
+                    List.fold
+                        (fun (model, nextCmd) -> function 
+                        | Cmd.Sub _ -> model, Cmd.none
+                        | Cmd.Msg msg -> 
+                            let model, cmd = update msg model
+                            model, Cmd.batch [ nextCmd; cmd ]
+                        )
+                        (model, [])
+                        cmd
+                stabilize (model, cmd)
+
+        let app = stabilize (init())
+        app.Store.Watchers.Length
+        |> expectEqual 1
+
+    let run() =
+        ``app stabilizes``()
+        ``one watcher for chat list gets added``()
+        //``when chat is opened 2 watchers are present``()
+
+module Tests = 
     [<EntryPoint>]
-    let main _ =
+    let main _  =
         StoreTests.run()
+        AppTests.run()
 
         0

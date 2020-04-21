@@ -45,6 +45,7 @@ module Api =
 
     let listen (updatesHanlder: Update List -> unit) =
         async {
+            do! Async.SwitchToThreadPool()
             while true do
                 do! Async.Sleep(100)
                 updatesHanlder randomUpdates

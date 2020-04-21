@@ -1,2 +1,2 @@
-fsc App.fs Main.fs
-Main.exe
+fsc App.fs Tests.fs
+Tests.exe
