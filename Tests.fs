@@ -126,43 +126,67 @@ module StoreTests =
 module AppTests =
     open App
 
-    let ``app stabilizes``() =
-        let mutable app, cmd = init()
+    let rec stabilize' update (model, cmd: Cmd.Cmd<_> list) =
+        if cmd.IsEmpty then model
+        else 
+            let model, cmd =
+                List.fold
+                    (fun (model, nextCmd) -> function 
+                    | Cmd.Sub _ -> model, Cmd.none
+                    | Cmd.Msg msg -> 
+                        let model, cmd = update msg model
+                        model, Cmd.batch [ nextCmd; cmd ]
+                    )
+                    (model, [])
+                    cmd
+            stabilize' update (model, cmd)
 
-        // TODO: refactor to a fold
-        while not cmd.IsEmpty do
-            match cmd with 
-            | Cmd.Msg msg::rest -> 
-                let app', cmd' = update msg app
-                app <- app'; cmd <- rest @ cmd'
-            | _::rest -> cmd <- rest
-            | _ -> failwith "unreachable"
+    // TODO: this doesn't work, since this uses
+    // cooperative concurrency. If no 'suspend' current 
+    // async get called then the timeout will never triger
+    let ``cyclic cmd cant stabilize``() =
+        try
+            Async.RunSynchronously(
+                async {
+                    do! Async.SwitchToThreadPool()
+                    let cmd = Cmd.ofMsg ()
+                    stabilize' (fun _ _ -> (), cmd) ((), cmd)
+                    |> ignore
+                }
+                , 100
+            )
+            failwith "cycle stabilized"
+        with _ -> ()
+
+    let stabilize = stabilize' update
+
+    let ``app stabilizes``() =
+        stabilize (init()) |> ignore
 
     let ``one watcher for chat list gets added``() =
-        let rec stabilize (model, cmd: Cmd.Cmd<_> list) =
-            if cmd.IsEmpty
-            then model
-            else
-                let model, cmd =
-                    List.fold
-                        (fun (model, nextCmd) -> function 
-                        | Cmd.Sub _ -> model, Cmd.none
-                        | Cmd.Msg msg -> 
-                            let model, cmd = update msg model
-                            model, Cmd.batch [ nextCmd; cmd ]
-                        )
-                        (model, [])
-                        cmd
-                stabilize (model, cmd)
-
         let app = stabilize (init())
         app.Store.Watchers.Length
         |> expectEqual 1
 
+    let ``when chat is opened 2 watchers are present``() =
+        let app = stabilize (init())
+        let app = stabilize (update (OpenChat chat1.Id) app)
+        app.Store.Watchers.Length
+        |> expectEqual 2
+
+    let ``when chat is dismissed 1 watcher are present``() =
+        let app = stabilize (init())
+        let app = stabilize (update (OpenChat chat1.Id) app)
+        let app = stabilize (update CloseChat app)
+        app.Store.Watchers.Length
+        |> expectEqual 1
+
     let run() =
+        //``cyclic cmd cant stabilize``()
         ``app stabilizes``()
         ``one watcher for chat list gets added``()
-        //``when chat is opened 2 watchers are present``()
+        ``when chat is opened 2 watchers are present``()
+        ``when chat is dismissed 1 watcher are present``()
 
 module Tests = 
     [<EntryPoint>]

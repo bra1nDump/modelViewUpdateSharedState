@@ -207,6 +207,7 @@ module App =
         | ChatsMsg of Chats.Msg
         | OpenChat of ChatId
         | ChatMsg of Chat.Msg
+        | CloseChat
         
     type Model = {
         Store: Store.Model<Msg>
@@ -274,3 +275,6 @@ module App =
                     watchers (chat.Watchers @ model.Chats.Watchers)
                 ]
                 |> Cmd.batch
+        | CloseChat ->
+            { model with Chat = None }
+            , [ watchers model.Chats.Watchers ] |> Cmd.batch
